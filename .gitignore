@@ -1,0 +1,16 @@
+# Binaries
+/wafportal
+/dist
+*.exe
+
+# Runtime data
+*.db
+*.db-shm
+*.db-wal
+/certs/
+
+# Frontend build deps (built dist is embedded and committed)
+/web/node_modules/
+
+# Local config overrides
+config.local.yaml

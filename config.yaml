@@ -1,0 +1,23 @@
+# wafportal configuration. Runtime data (protected sites, custom rules) is
+# managed through the portal and stored in the database, not here.
+
+proxy:
+  # Plaintext listener: serves ACME HTTP-01 challenges, redirects TLS sites to
+  # HTTPS, and serves plaintext sites. Use :80 in production.
+  http_addr: ":80"
+  # TLS listener. Use :443 in production. Leave empty to disable HTTPS.
+  https_addr: ":443"
+
+admin:
+  # Control-plane API + portal UI. The API is unauthenticated in v1, so bind it
+  # to localhost and reach it over an SSH tunnel or VPN.
+  addr: "127.0.0.1:9090"
+
+tls:
+  # Contact address registered with Let's Encrypt for autocert sites.
+  email: ""
+  # Directory where issued certificates are cached (persist this across deploys).
+  cache_dir: "./certs"
+
+database:
+  path: "./wafportal.db"
