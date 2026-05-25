@@ -1,0 +1,41 @@
+# wafportal configuration. Runtime data (protected sites, custom rules) is
+# managed through the portal and stored in the database, not here.
+
+proxy:
+  # Plaintext listener: serves ACME HTTP-01 challenges, redirects TLS sites to
+  # HTTPS, and serves plaintext sites. Use :80 in production.
+  http_addr: ":80"
+  # TLS listener. Use :443 in production. Leave empty to disable HTTPS.
+  https_addr: ":443"
+
+admin:
+  # Control-plane API + portal UI. Protected by a login; still, prefer binding
+  # to localhost and reaching it over an SSH tunnel or VPN.
+  addr: "127.0.0.1:9090"
+  # Admin username (defaults to "admin").
+  username: "admin"
+  # Bootstrap password. Prefer the WAFPORTAL_ADMIN_PASSWORD environment variable
+  # over writing it here. If both are empty, a random password is generated and
+  # printed to the log on first run; change it from the portal's Account page.
+  password: ""
+
+tls:
+  # Contact address registered with Let's Encrypt for autocert sites.
+  email: ""
+  # Directory where issued certificates are cached (persist this across deploys).
+  cache_dir: "./certs"
+
+database:
+  path: "./wafportal.db"
+
+# Per-client rate limiting blunts application-layer (L7) floods such as HTTP
+# request floods. It does NOT stop volumetric (L3/L4) DDoS — for that, put a
+# network-level service (e.g. Cloudflare) in front of the server.
+rate_limit:
+  enabled: true
+  requests_per_second: 20
+  burst: 40
+  # Enable only when a trusted proxy/CDN sits in front, then rate limiting keys
+  # on the real client IP from this header instead of the proxy's address.
+  trust_forwarded_header: false
+  forwarded_header: "X-Forwarded-For"
