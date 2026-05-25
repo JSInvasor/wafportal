@@ -11,6 +11,7 @@
 
 # Frontend build deps (built dist is embedded and committed)
 /web/node_modules/
+*.tsbuildinfo
 
 # Local config overrides
 config.local.yaml
