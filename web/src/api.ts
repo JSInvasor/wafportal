@@ -65,6 +65,11 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* non-JSON error body */
     }
+    // A lost or expired session bounces the user to the login screen, except
+    // when they are already there (so a bad-credentials 401 shows its message).
+    if (res.status === 401 && location.pathname !== "/login") {
+      location.assign("/login");
+    }
     throw new Error(msg);
   }
   if (res.status === 204) return undefined as T;
@@ -72,6 +77,13 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  login: (username: string, password: string) =>
+    req<{ username: string }>("/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+  logout: () => req<void>("/logout", { method: "POST" }),
+  me: () => req<{ username: string }>("/me"),
+  changePassword: (current: string, next: string) =>
+    req<void>("/account/password", { method: "POST", body: JSON.stringify({ current, new: next }) }),
+
   listSites: () => req<Site[]>("/sites"),
   createSite: (s: Partial<Site>) => req<Site>("/sites", { method: "POST", body: JSON.stringify(s) }),
   updateSite: (id: number, s: Partial<Site>) => req<Site>(`/sites/${id}`, { method: "PUT", body: JSON.stringify(s) }),

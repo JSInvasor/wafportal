@@ -9,9 +9,15 @@ proxy:
   https_addr: ":443"
 
 admin:
-  # Control-plane API + portal UI. The API is unauthenticated in v1, so bind it
-  # to localhost and reach it over an SSH tunnel or VPN.
+  # Control-plane API + portal UI. Protected by a login; still, prefer binding
+  # to localhost and reaching it over an SSH tunnel or VPN.
   addr: "127.0.0.1:9090"
+  # Admin username (defaults to "admin").
+  username: "admin"
+  # Bootstrap password. Prefer the WAFPORTAL_ADMIN_PASSWORD environment variable
+  # over writing it here. If both are empty, a random password is generated and
+  # printed to the log on first run; change it from the portal's Account page.
+  password: ""
 
 tls:
   # Contact address registered with Let's Encrypt for autocert sites.

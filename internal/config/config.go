@@ -26,9 +26,14 @@ type ProxyConfig struct {
 }
 
 type AdminConfig struct {
-	// Addr is the listen address for the control-plane API and SPA. Bind this
-	// to localhost (or behind a VPN) in production; it is unauthenticated in v1.
+	// Addr is the listen address for the control-plane API and SPA.
 	Addr string `yaml:"addr"`
+	// Username for the portal admin account (defaults to "admin").
+	Username string `yaml:"username"`
+	// Password bootstraps the admin account. Prefer the WAFPORTAL_ADMIN_PASSWORD
+	// environment variable over storing it here. If neither is set, a random
+	// password is generated and printed to the log on first run.
+	Password string `yaml:"password"`
 }
 
 type TLSConfig struct {

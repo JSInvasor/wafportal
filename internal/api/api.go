@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/jsinvasor/wafportal/internal/auth"
 	"github.com/jsinvasor/wafportal/internal/store"
 )
 
@@ -21,12 +22,13 @@ import (
 // mutation so changes take effect immediately.
 type Server struct {
 	store  *store.Store
+	auth   *auth.Authenticator
 	reload func() error
 	spa    http.Handler
 }
 
-func NewServer(st *store.Store, reload func() error, spa http.Handler) *Server {
-	return &Server{store: st, reload: reload, spa: spa}
+func NewServer(st *store.Store, authn *auth.Authenticator, reload func() error, spa http.Handler) *Server {
+	return &Server{store: st, auth: authn, reload: reload, spa: spa}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -34,28 +36,82 @@ func (s *Server) Handler() http.Handler {
 	r.Use(middleware.Recoverer)
 
 	r.Route("/api", func(r chi.Router) {
+		// Public endpoints.
 		r.Get("/health", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, http.StatusOK, map[string]string{"status": "ok"}) })
+		r.Post("/login", s.login)
+		r.Post("/logout", s.logout)
 
-		r.Get("/sites", s.listSites)
-		r.Post("/sites", s.createSite)
-		r.Get("/sites/{id}", s.getSite)
-		r.Put("/sites/{id}", s.updateSite)
-		r.Delete("/sites/{id}", s.deleteSite)
+		// Everything below requires a valid session.
+		r.Group(func(r chi.Router) {
+			r.Use(s.auth.Middleware)
 
-		r.Get("/rules", s.listRules)
-		r.Post("/rules", s.createRule)
-		r.Get("/rules/{id}", s.getRule)
-		r.Put("/rules/{id}", s.updateRule)
-		r.Delete("/rules/{id}", s.deleteRule)
+			r.Get("/me", s.me)
+			r.Post("/account/password", s.changePassword)
 
-		r.Get("/events", s.listEvents)
-		r.Get("/stats", s.stats)
+			r.Get("/sites", s.listSites)
+			r.Post("/sites", s.createSite)
+			r.Get("/sites/{id}", s.getSite)
+			r.Put("/sites/{id}", s.updateSite)
+			r.Delete("/sites/{id}", s.deleteSite)
+
+			r.Get("/rules", s.listRules)
+			r.Post("/rules", s.createRule)
+			r.Get("/rules/{id}", s.getRule)
+			r.Put("/rules/{id}", s.updateRule)
+			r.Delete("/rules/{id}", s.deleteRule)
+
+			r.Get("/events", s.listEvents)
+			r.Get("/stats", s.stats)
+		})
 	})
 
 	if s.spa != nil {
 		r.Handle("/*", s.spa)
 	}
 	return r
+}
+
+// ---- Auth ----
+
+func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if !readJSON(w, r, &body) {
+		return
+	}
+	if !s.auth.Check(body.Username, body.Password) {
+		writeJSONErr(w, http.StatusUnauthorized, "invalid username or password")
+		return
+	}
+	s.auth.IssueCookie(w, r, body.Username)
+	writeJSON(w, http.StatusOK, map[string]string{"username": body.Username})
+}
+
+func (s *Server) logout(w http.ResponseWriter, _ *http.Request) {
+	s.auth.Clear(w)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) me(w http.ResponseWriter, r *http.Request) {
+	user, _ := s.auth.CurrentUser(r)
+	writeJSON(w, http.StatusOK, map[string]string{"username": user})
+}
+
+func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Current string `json:"current"`
+		New     string `json:"new"`
+	}
+	if !readJSON(w, r, &body) {
+		return
+	}
+	if err := s.auth.ChangePassword(body.Current, body.New); err != nil {
+		writeJSONErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ---- Sites ----

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jsinvasor/wafportal/internal/api"
+	"github.com/jsinvasor/wafportal/internal/auth"
 	"github.com/jsinvasor/wafportal/internal/config"
 	"github.com/jsinvasor/wafportal/internal/proxy"
 	"github.com/jsinvasor/wafportal/internal/store"
@@ -62,11 +63,30 @@ func main() {
 	}
 	log.Printf("WAF engine loaded (OWASP CRS + custom rules)")
 
+	password := cfg.Admin.Password
+	if env := os.Getenv("WAFPORTAL_ADMIN_PASSWORD"); env != "" {
+		password = env
+	}
+	authn, err := auth.New(st, cfg.Admin.Username, password)
+	if err != nil {
+		log.Fatalf("auth: %v", err)
+	}
+	if authn.GeneratedPassword != "" {
+		log.Printf("\n"+
+			"==================================================\n"+
+			"  Portal admin account created\n"+
+			"    username: %s\n"+
+			"    password: %s\n"+
+			"  Set WAFPORTAL_ADMIN_PASSWORD to choose your own.\n"+
+			"==================================================",
+			authn.Username(), authn.GeneratedPassword)
+	}
+
 	spa, err := web.Dist()
 	if err != nil {
 		log.Fatalf("embedded SPA: %v", err)
 	}
-	apiSrv := api.NewServer(st, reload, api.SPAHandler(spa))
+	apiSrv := api.NewServer(st, authn, reload, api.SPAHandler(spa))
 
 	servers := startServers(cfg, p, apiSrv)
 	waitForShutdown(servers)

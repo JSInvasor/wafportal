@@ -6,9 +6,12 @@ import { Dashboard } from "./pages/Dashboard";
 import { Events } from "./pages/Events";
 import { Rules } from "./pages/Rules";
 import { Sites } from "./pages/Sites";
+import { Account } from "./pages/Account";
+import { Login } from "./pages/Login";
 import "./styles.css";
 
 const router = createBrowserRouter([
+  { path: "/login", element: <Login /> },
   {
     path: "/",
     element: <Layout />,
@@ -17,6 +20,7 @@ const router = createBrowserRouter([
       { path: "events", element: <Events /> },
       { path: "rules", element: <Rules /> },
       { path: "sites", element: <Sites /> },
+      { path: "account", element: <Account /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],
   },
