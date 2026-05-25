@@ -16,26 +16,31 @@ import (
 
 	"golang.org/x/crypto/acme/autocert"
 
+	"github.com/jsinvasor/wafportal/internal/ratelimit"
 	"github.com/jsinvasor/wafportal/internal/store"
 	"github.com/jsinvasor/wafportal/internal/waf"
 )
 
 type Proxy struct {
-	wafmgr *waf.Manager
-	sink   waf.EventSink
+	wafmgr   *waf.Manager
+	sink     waf.EventSink
+	limiter  *ratelimit.Limiter
+	clientIP func(*http.Request) string
 
 	certMgr *autocert.Manager
 
 	mu          sync.RWMutex
-	handlers    map[string]http.Handler   // domain -> WAF-wrapped reverse proxy
-	autoDomains map[string]bool           // domains using Let's Encrypt
+	handlers    map[string]http.Handler // domain -> WAF-wrapped reverse proxy
+	autoDomains map[string]bool         // domains using Let's Encrypt
 	manualCerts map[string]*tls.Certificate
 }
 
-func New(wafmgr *waf.Manager, sink waf.EventSink, certCacheDir, acmeEmail string) *Proxy {
+func New(wafmgr *waf.Manager, sink waf.EventSink, limiter *ratelimit.Limiter, clientIP func(*http.Request) string, certCacheDir, acmeEmail string) *Proxy {
 	p := &Proxy{
 		wafmgr:      wafmgr,
 		sink:        sink,
+		limiter:     limiter,
+		clientIP:    clientIP,
 		handlers:    map[string]http.Handler{},
 		autoDomains: map[string]bool{},
 		manualCerts: map[string]*tls.Certificate{},
@@ -93,6 +98,11 @@ func (p *Proxy) Reload(sites []store.Site) {
 }
 
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if p.limiter != nil && !p.limiter.Allow(p.clientIP(r)) {
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+		return
+	}
 	h := p.handlerFor(r.Host)
 	if h == nil {
 		http.Error(w, "no site configured for this host", http.StatusNotFound)

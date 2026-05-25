@@ -11,10 +11,24 @@ import (
 )
 
 type Config struct {
-	Proxy    ProxyConfig    `yaml:"proxy"`
-	Admin    AdminConfig    `yaml:"admin"`
-	TLS      TLSConfig      `yaml:"tls"`
-	Database DatabaseConfig `yaml:"database"`
+	Proxy     ProxyConfig     `yaml:"proxy"`
+	Admin     AdminConfig     `yaml:"admin"`
+	TLS       TLSConfig       `yaml:"tls"`
+	Database  DatabaseConfig  `yaml:"database"`
+	RateLimit RateLimitConfig `yaml:"rate_limit"`
+}
+
+// RateLimitConfig configures per-client L7 flood protection. It does not defend
+// against volumetric (L3/L4) DDoS, which must be absorbed upstream.
+type RateLimitConfig struct {
+	Enabled           bool    `yaml:"enabled"`
+	RequestsPerSecond float64 `yaml:"requests_per_second"`
+	Burst             int     `yaml:"burst"`
+	// TrustForwardedHeader makes the limiter read the client IP from a proxy
+	// header (e.g. behind Cloudflare or another reverse proxy). Only enable it
+	// when a trusted proxy sits in front, or clients can spoof the header.
+	TrustForwardedHeader bool   `yaml:"trust_forwarded_header"`
+	ForwardedHeader      string `yaml:"forwarded_header"`
 }
 
 type ProxyConfig struct {
@@ -53,6 +67,12 @@ func Default() Config {
 		Admin:    AdminConfig{Addr: "127.0.0.1:9090"},
 		TLS:      TLSConfig{CacheDir: "./certs"},
 		Database: DatabaseConfig{Path: "./wafportal.db"},
+		RateLimit: RateLimitConfig{
+			Enabled:           true,
+			RequestsPerSecond: 20,
+			Burst:             40,
+			ForwardedHeader:   "X-Forwarded-For",
+		},
 	}
 }
 

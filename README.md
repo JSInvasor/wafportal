@@ -19,6 +19,22 @@ automatically via Let's Encrypt.
 - Login-protected admin panel
 - Custom rules hot-reload; a rule that fails to compile is rejected, so the
   live firewall is never broken
+- Per-client rate limiting and slow-client (slowloris) timeouts
+
+## What this does and does not protect against
+
+wafportal is a **Layer 7 (application-layer)** firewall. It inspects HTTP
+requests and blocks malicious *content* (SQLi, XSS, path traversal, scanners)
+and throttles **L7 floods** (too many requests from one client) via rate
+limiting.
+
+It is **not** a defense against **volumetric (L3/L4) DDoS** — attacks that
+saturate your bandwidth or connection table. No software running on a single
+server can stop those, because the damage happens before traffic reaches the
+application. For that, put a network-level service in front, such as
+**Cloudflare** (its free tier works) or your hosting provider's DDoS
+protection. When you do, set `rate_limit.trust_forwarded_header: true` so rate
+limiting keys on the real visitor IP.
 
 ## Build
 

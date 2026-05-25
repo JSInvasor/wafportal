@@ -55,6 +55,16 @@ tls:
 
 database:
   path: "/var/lib/wafportal/wafportal.db"
+
+# Application-layer (L7) flood protection. Volumetric (L3/L4) DDoS must be
+# absorbed upstream, e.g. by Cloudflare.
+rate_limit:
+  enabled: true
+  requests_per_second: 20
+  burst: 40
+  # Set to true (and keep the header) only if a trusted proxy/CDN is in front.
+  trust_forwarded_header: false
+  forwarded_header: "X-Forwarded-For"
 YAML
   chown wafportal:wafportal "$CONF_DIR/config.yaml"
   chmod 0640 "$CONF_DIR/config.yaml"

@@ -7,9 +7,11 @@ import (
 	"context"
 	"flag"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/jsinvasor/wafportal/internal/auth"
 	"github.com/jsinvasor/wafportal/internal/config"
 	"github.com/jsinvasor/wafportal/internal/proxy"
+	"github.com/jsinvasor/wafportal/internal/ratelimit"
 	"github.com/jsinvasor/wafportal/internal/store"
 	"github.com/jsinvasor/wafportal/internal/waf"
 	"github.com/jsinvasor/wafportal/web"
@@ -39,7 +42,13 @@ func main() {
 
 	wafmgr := waf.NewManager()
 	sink := newEventSink(st, 4096)
-	p := proxy.New(wafmgr, sink.Submit, cfg.TLS.CacheDir, cfg.TLS.Email)
+
+	var limiter *ratelimit.Limiter
+	if cfg.RateLimit.Enabled {
+		limiter = ratelimit.New(cfg.RateLimit.RequestsPerSecond, cfg.RateLimit.Burst)
+		log.Printf("L7 rate limiting on: %.0f req/s per client (burst %d)", cfg.RateLimit.RequestsPerSecond, cfg.RateLimit.Burst)
+	}
+	p := proxy.New(wafmgr, sink.Submit, limiter, clientIPFunc(cfg.RateLimit), cfg.TLS.CacheDir, cfg.TLS.Email)
 
 	// reload re-syncs engines and routing from the store. The proxy reads
 	// engines from wafmgr, so rules must be (re)compiled before routing.
@@ -95,7 +104,14 @@ func main() {
 func startServers(cfg config.Config, p *proxy.Proxy, apiSrv *api.Server) []*http.Server {
 	var servers []*http.Server
 
-	admin := &http.Server{Addr: cfg.Admin.Addr, Handler: apiSrv.Handler()}
+	admin := &http.Server{
+		Addr:              cfg.Admin.Addr,
+		Handler:           apiSrv.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 	servers = append(servers, admin)
 	go func() {
 		log.Printf("admin API + portal listening on %s", cfg.Admin.Addr)
@@ -105,6 +121,7 @@ func startServers(cfg config.Config, p *proxy.Proxy, apiSrv *api.Server) []*http
 	}()
 
 	httpSrv := &http.Server{Addr: cfg.Proxy.HTTPAddr, Handler: p.HTTPHandler()}
+	setProxyTimeouts(httpSrv)
 	servers = append(servers, httpSrv)
 	go func() {
 		log.Printf("proxy HTTP listening on %s", cfg.Proxy.HTTPAddr)
@@ -119,6 +136,7 @@ func startServers(cfg config.Config, p *proxy.Proxy, apiSrv *api.Server) []*http
 			Handler:   p,
 			TLSConfig: p.TLSConfig(),
 		}
+		setProxyTimeouts(httpsSrv)
 		servers = append(servers, httpsSrv)
 		go func() {
 			log.Printf("proxy HTTPS listening on %s", cfg.Proxy.HTTPSAddr)
@@ -132,6 +150,15 @@ func startServers(cfg config.Config, p *proxy.Proxy, apiSrv *api.Server) []*http
 	return servers
 }
 
+// setProxyTimeouts hardens the proxy listeners against slow-client attacks
+// (e.g. slowloris) via ReadHeaderTimeout and IdleTimeout, while leaving the
+// overall read/write deadlines open so large uploads, downloads, and streaming
+// responses to upstreams are not cut off.
+func setProxyTimeouts(s *http.Server) {
+	s.ReadHeaderTimeout = 10 * time.Second
+	s.IdleTimeout = 120 * time.Second
+}
+
 func waitForShutdown(servers []*http.Server) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -142,6 +169,27 @@ func waitForShutdown(servers []*http.Server) {
 	defer cancel()
 	for _, srv := range servers {
 		_ = srv.Shutdown(ctx)
+	}
+}
+
+// clientIPFunc resolves the client IP used for rate limiting. Behind a trusted
+// proxy (e.g. Cloudflare) it reads the configured forwarded header; otherwise
+// it uses the TCP peer address.
+func clientIPFunc(cfg config.RateLimitConfig) func(*http.Request) string {
+	return func(r *http.Request) string {
+		if cfg.TrustForwardedHeader && cfg.ForwardedHeader != "" {
+			if h := r.Header.Get(cfg.ForwardedHeader); h != "" {
+				if i := strings.IndexByte(h, ','); i != -1 {
+					h = h[:i]
+				}
+				return strings.TrimSpace(h)
+			}
+		}
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			return r.RemoteAddr
+		}
+		return host
 	}
 }
 
